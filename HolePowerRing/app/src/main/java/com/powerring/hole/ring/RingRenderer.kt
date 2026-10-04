@@ -713,7 +713,16 @@ object RingRenderer {
         // ---- 音乐律动（叠加层）：听歌时环像呼吸灯一样柔和地动 ----
         // 呼吸 / 跑马灯两种形式 + 颜色缓慢渐变；幅度克制，不抢屏幕主视觉。
         var glowColor = ringColor
-        val musicNow = config.musicPulseEnabled && state.musicPulsing
+        // v1.3.3-fix：开了「音频驱动」且麦克风真的听到声音时，即便系统媒体探测
+        // 没识别出在放歌，也直接让环进入律动——不再强依赖通知使用权/媒体探测，
+        // 外放音乐能立即跟随声音起伏（耳机场景受平台限制见说明）。
+        val audioSensGate = config.musicAudioSensitivityPercent.coerceIn(
+            RingConfig.AUDIO_SENS_MIN, RingConfig.AUDIO_SENS_MAX,
+        ) / 100f
+        val audioLevelGate = (state.audioLevel * audioSensGate).coerceIn(0f, 1f)
+        val audioDriving = config.musicPulseEnabled && config.musicAudioReactive &&
+            audioLevelGate > 0.02f
+        val musicNow = config.musicPulseEnabled && (state.musicPulsing || audioDriving)
         // v1.2.0：音乐停止后仍按 effectMix 续绘约 460ms 淡出，不再硬切回正常态。
         if (musicNow || (effectMix > 0.001f && lastEffectKind == EFFECT_MUSIC)) {
             // 记录叠加前的基础色，供淡入淡出插值（音乐停止时从音乐色平滑退回它）
@@ -866,7 +875,7 @@ object RingRenderer {
                     // 静处收暗），这样「环」和「外圈光晕」是同一个节奏在动，不再割裂。
                     // v1.3.3：把耦合加深（0.72+0.28 → 0.55+0.45），并让光晕也随音量起伏，
                     // 节拍更明显
-                    val live = if (useAudioPhase) 0.55f + 0.45f * liveLevel else 1f
+                    val live = if (useAudioPhase) 0.40f + 0.60f * liveLevel else 1f
                     ringColor = scaleAlpha(ringColor, (1f - dim * (1f - breath)) * live)
                     val liveGlow = if (useAudioPhase) 0.45f + 0.85f * liveLevel else 1f
                     val g = 0.26f * breath * strength * (1f + flash) * liveGlow
@@ -891,8 +900,8 @@ object RingRenderer {
                 ) / 100f
                 val lvl = (state.audioLevel * sens).coerceIn(0f, 1f)
                 // v1.3.3：加深音量对亮度/光晕的叠加，节拍感更足
-                ringColor = scaleAlpha(ringColor, (0.68f + 0.32f * lvl).coerceIn(0f, 1f))
-                val boost = 0.10f + 0.75f * lvl
+                ringColor = scaleAlpha(ringColor, (0.50f + 0.50f * lvl).coerceIn(0f, 1f))
+                val boost = 0.05f + 0.95f * lvl
                 if (boost > glowScale) glowScale = boost
             }
             // 淡入淡出：音乐开始 / 结束时，在正常环色与音乐色之间平滑过渡
